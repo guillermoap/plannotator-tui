@@ -544,6 +544,12 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, mut app: App) -> Result<O
         if dirty {
             let started = Instant::now();
             terminal.draw(|frame| app.draw(frame))?;
+            let graphics = app.take_graphics();
+            if !graphics.is_empty() {
+                let mut out = stdout().lock();
+                out.write_all(graphics.as_bytes())?;
+                out.flush()?;
+            }
             app.record_frame(started.elapsed().as_secs_f64() * 1000.0);
             dirty = false;
         }
@@ -570,7 +576,7 @@ fn bench(path: &PathBuf) -> Result<()> {
     let parse_ms = t.elapsed().as_secs_f64() * 1000.0;
 
     let t = Instant::now();
-    let mut layout = DocLayout::build(&doc, 100);
+    let mut layout = DocLayout::build(&doc, 100, path.parent());
     let build_ms = t.elapsed().as_secs_f64() * 1000.0;
 
     let reflow: Vec<String> = [60usize, 140, 80, 120]

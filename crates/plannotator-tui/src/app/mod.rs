@@ -136,7 +136,7 @@ impl Open {
     fn new(source: DocumentSource, width: usize, data_dir: &Path, project: &str) -> Result<Self> {
         let disk = disk::DiskStamp::of_source(&source.provenance);
         let doc = Document::parse(source.content.clone());
-        let layout = DocLayout::build(&doc, width);
+        let layout = DocLayout::build(&doc, width, source_folder(&source.provenance));
         let store = match (&source.provenance, source.transient) {
             (Provenance::File { path }, false) => {
                 Store::load(&Location::for_file(data_dir, project, path), &doc)?
@@ -144,6 +144,14 @@ impl Open {
             _ => Store::transient(),
         };
         Ok(Self { source, doc, layout, store, disk, disk_noticed: None })
+    }
+}
+
+/// The folder relative image paths resolve against: the file's own folder, when there is one.
+fn source_folder(provenance: &Provenance) -> Option<&Path> {
+    match provenance {
+        Provenance::File { path } => path.parent(),
+        _ => None,
     }
 }
 
@@ -456,6 +464,11 @@ impl App {
         self.terminal_breaks = Some(breaks);
     }
 
+    /// Kitty graphics escapes the open document still owes the terminal.
+    pub(crate) fn take_graphics(&mut self) -> String {
+        self.open.layout.take_graphics()
+    }
+
     pub(crate) fn record_frame(&mut self, ms: f64) {
         self.frame_ms = if self.frame_ms == 0.0 { ms } else { self.frame_ms * 0.9 + ms * 0.1 };
         self.frame_max_ms = self.frame_max_ms.max(ms);
@@ -638,7 +651,11 @@ impl App {
         self.open.disk = disk;
         self.open.disk_noticed = None;
         self.open.doc = Document::parse(self.open.source.content.clone());
-        self.open.layout = DocLayout::build(&self.open.doc, self.open.layout.width);
+        self.open.layout = DocLayout::build(
+            &self.open.doc,
+            self.open.layout.width,
+            source_folder(&self.open.source.provenance),
+        );
         self.open.store =
             Store::load(&Location::for_file(&self.data_dir, &self.project, &path), &self.open.doc)?;
         self.refresh_review_counts();

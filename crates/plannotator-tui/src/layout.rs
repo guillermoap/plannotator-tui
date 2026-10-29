@@ -5,12 +5,14 @@
 //! cell therefore knows its block and, where it shows real text, its source byte.
 
 use std::ops::Range;
+use std::path::Path;
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Text};
 use tui_markdown::{Options, StyleSheet};
 
 use crate::doc::{BlockKind, Document};
+use crate::graphics::{self, Image};
 use crate::srcmap::{LineOffsets, align};
 use crate::theme::palette;
 use crate::wrap::{Row, clip_line, wrap_line, wrap_table};
@@ -52,10 +54,21 @@ pub(crate) struct RenderedBlock {
     /// Per line, per char: absolute source byte offset (cached with `text`).
     offsets: Vec<LineOffsets>,
     kind: BlockKind,
+    /// The image drawn under the block's caption, when the block is a lone local PNG.
+    image: Option<InlineImage>,
     /// Rows for the current width.
     pub(crate) rows: Vec<Row>,
     /// First screen row of this block in document coordinates.
     pub(crate) first_row: usize,
+}
+
+#[derive(Debug)]
+struct InlineImage {
+    image: Image,
+    sent: bool,
+    /// Cell box for the current width, and the box the terminal was last told about.
+    grid: (usize, usize),
+    placed: Option<(usize, usize)>,
 }
 
 #[derive(Debug)]
@@ -88,15 +101,24 @@ fn own(text: Text<'_>) -> Text<'static> {
 }
 
 impl DocLayout {
-    /// Render every block once (the expensive part) and lay out for `width`.
-    pub(crate) fn build(doc: &Document, width: usize) -> Self {
+    /// Render every block once (the expensive part) and lay out for `width`. Relative image
+    /// paths resolve against `base`, the document's folder.
+    pub(crate) fn build(doc: &Document, width: usize, base: Option<&Path>) -> Self {
         let blocks = doc
             .blocks
             .iter()
             .enumerate()
             .map(|(i, block)| {
                 let (text, offsets) = render_block(doc, i);
-                RenderedBlock { text, offsets, kind: block.kind, rows: Vec::new(), first_row: 0 }
+                let image = block
+                    .image
+                    .as_deref()
+                    .filter(|_| graphics::supported())
+                    .and_then(|dest| {
+                        Image::load(&base.unwrap_or(Path::new("")).join(dest), graphics::image_id(i))
+                    })
+                    .map(|image| InlineImage { image, sent: false, grid: (0, 0), placed: None });
+                RenderedBlock { text, offsets, kind: block.kind, image, rows: Vec::new(), first_row: 0 }
             })
             .collect();
         let mut layout = Self { width: 0, blocks, total_rows: 0 };
@@ -108,6 +130,7 @@ impl DocLayout {
     pub(crate) fn reflow(&mut self, width: usize) {
         let width = width.max(1);
         self.width = width;
+        let cell = if self.blocks.iter().any(|b| b.image.is_some()) { graphics::cell_size() } else { (1, 1) };
         let mut row = 0usize;
         for block in &mut self.blocks {
             block.first_row = row;
@@ -119,9 +142,30 @@ impl DocLayout {
             } else {
                 lines().flat_map(|(l, o)| wrap_line(l, o, width)).collect()
             };
+            if let Some(inline) = &mut block.image {
+                inline.grid = inline.image.grid(width, cell);
+                block.rows.extend(inline.image.rows(inline.grid));
+            }
             row += block.rows.len() + BLOCK_GAP;
         }
         self.total_rows = row.saturating_sub(BLOCK_GAP);
+    }
+
+    /// Escape sequences the terminal still needs: each image once, and a placement whenever
+    /// an image's cell box changed. Empty when nothing changed.
+    pub(crate) fn take_graphics(&mut self) -> String {
+        let mut out = String::new();
+        for inline in self.blocks.iter_mut().filter_map(|b| b.image.as_mut()) {
+            if !inline.sent {
+                out.push_str(&inline.image.transmit());
+                inline.sent = true;
+            }
+            if inline.placed != Some(inline.grid) {
+                out.push_str(&inline.image.place(inline.grid));
+                inline.placed = Some(inline.grid);
+            }
+        }
+        out
     }
 
     /// Which block owns a document row (gap rows belong to nobody).
@@ -187,7 +231,7 @@ mod tests {
     #[test]
     fn rendered_text_strips_markup_and_joins_blocks_without_separator() {
         let doc = Document::parse("Ship the **login page**\nby Friday.\n\nNext para.\n".to_owned());
-        let layout = DocLayout::build(&doc, 80);
+        let layout = DocLayout::build(&doc, 80, None);
         let whole = 0..doc.source.len();
         assert_eq!(layout.rendered_in_range(&doc.source, &whole), "Ship the login page by Friday.Next para.");
         let bold = doc.source.find("**login").expect("present");
@@ -208,7 +252,7 @@ tested; it's live, but QA hasn't finished acceptance testing | Close it now, or 
 | D. 3/21 lookup and report tools in the CLI; 3/23 plugin consolidation | Marked \"not confirmed\" | Your call |\n"
                 .to_owned(),
         );
-        let layout = DocLayout::build(&doc, 100);
+        let layout = DocLayout::build(&doc, 100, None);
         let table = layout.blocks.iter().find(|b| b.kind == BlockKind::Table).expect("a table");
         let mut cells = 0;
         for row in &table.rows {
