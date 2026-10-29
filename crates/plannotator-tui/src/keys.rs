@@ -21,6 +21,8 @@ pub(crate) enum Action {
     Right,
     WordForward,
     WordBack,
+    WordEnd,
+    GotoWord,
     LineStart,
     LineEnd,
     PageDown,
@@ -66,10 +68,10 @@ pub(crate) enum Action {
 
 use Action::{
     Approve, Archive, AttachImage, Back, Bottom, ClearAll, ClearBlock, Comment, Confirm, CopySelection,
-    CycleFocus, Delete, Down, Edit, FinishReview, Interrupt, Left, LineEnd, LineStart, LooksGood, MoveCursor,
-    No, OpenInEditor, PageDown, PageUp, PickMessage, QuickOpen, Quit, Reload, Remove, RemoveImage, ResendAll,
-    ReviewMenu, Right, Send, SendAndClose, ToggleHidden, ToggleTree, Top, UndoFinish, Up, Visual, WordBack,
-    WordForward, Yes,
+    CycleFocus, Delete, Down, Edit, FinishReview, GotoWord, Interrupt, Left, LineEnd, LineStart, LooksGood,
+    MoveCursor, No, OpenInEditor, PageDown, PageUp, PickMessage, QuickOpen, Quit, Reload, Remove,
+    RemoveImage, ResendAll, ReviewMenu, Right, Send, SendAndClose, ToggleHidden, ToggleTree, Top, UndoFinish,
+    Up, Visual, WordBack, WordEnd, WordForward, Yes,
 };
 
 /// Browsing, before the focused pane gets the key.
@@ -102,6 +104,10 @@ pub(crate) const DOCUMENT: &[Action] = &[
     Up,
     Left,
     Right,
+    WordForward,
+    WordBack,
+    WordEnd,
+    GotoWord,
     PageDown,
     PageUp,
     Top,
@@ -114,7 +120,8 @@ pub(crate) const DOCUMENT: &[Action] = &[
     RemoveImage,
 ];
 /// Cursor motions, in visual mode and while moving the cursor (`move-cursor`).
-pub(crate) const MOTION: &[Action] = &[Left, Right, Down, Up, WordForward, WordBack, LineStart, LineEnd];
+pub(crate) const MOTION: &[Action] =
+    &[Left, Right, Down, Up, WordForward, WordBack, WordEnd, GotoWord, LineStart, LineEnd];
 /// While a keyboard selection grows; any other key is a motion.
 pub(crate) const VISUAL: &[Action] = &[Back, Confirm, Visual];
 /// While a finished selection waits for its kind.
@@ -249,6 +256,8 @@ const DEFAULTS: &[(Action, &[Key])] = &[
     (Right, &[ch('l'), named(KeyCode::Right)]),
     (WordForward, &[ch('w')]),
     (WordBack, &[ch('b')]),
+    (WordEnd, &[ch('e')]),
+    (GotoWord, &[ch('f')]),
     (LineStart, &[ch('0'), named(KeyCode::Home)]),
     (LineEnd, &[ch('$'), named(KeyCode::End)]),
     (PageDown, &[ctrl('d'), named(KeyCode::PageDown)]),
@@ -290,9 +299,9 @@ const DEFAULTS: &[(Action, &[Key])] = &[
     (No, &[ch('n'), ch('N')]),
 ];
 
-/// Actions added after configs were written: `approve` (live only in a gated review) and
-/// `copy` (on a waiting selection).
-const LATE: &[Action] = &[Approve, CopySelection];
+/// Actions added after configs were written: `approve` (live only in a gated review),
+/// `copy` (on a waiting selection), and the `word-end` and `goto-word` motions.
+const LATE: &[Action] = &[Approve, CopySelection, WordEnd, GotoWord];
 
 /// The keys bound to each action. A `[keys]` entry replaces that action's keys and leaves the
 /// others at their defaults; an empty list unbinds the action.
@@ -399,6 +408,8 @@ impl Action {
             Self::Right => "right",
             Self::WordForward => "word-forward",
             Self::WordBack => "word-back",
+            Self::WordEnd => "word-end",
+            Self::GotoWord => "goto-word",
             Self::LineStart => "line-start",
             Self::LineEnd => "line-end",
             Self::PageDown => "page-down",

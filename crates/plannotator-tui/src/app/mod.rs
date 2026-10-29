@@ -13,6 +13,7 @@ mod header;
 mod images;
 mod input;
 mod menu;
+mod motion;
 mod pick;
 mod replies;
 mod review;
@@ -75,6 +76,8 @@ enum Mode {
     Archive,
     /// The header's Review menu is open over a file or folder review.
     ReviewMenu,
+    /// `goto-word`: labels cover the visible words until one is typed.
+    Jump(motion::Jump),
 }
 
 /// Which pane keyboard input goes to.
@@ -196,6 +199,8 @@ pub(crate) struct App {
     cursor: (usize, usize),
     /// `i`: the cursor moves by row without selecting, so `v` can start mid-block.
     roam: bool,
+    /// Digits typed before a command, vim's count: `5w`, `10G`.
+    count: Option<usize>,
     /// Index into the rail's placed annotations.
     rail_cursor: usize,
     mode: Mode,
@@ -289,6 +294,7 @@ impl App {
             pending: None,
             cursor: (0, 0),
             roam: false,
+            count: None,
             rail_cursor: 0,
             mode: Mode::Browse,
             candidates: Vec::new(),

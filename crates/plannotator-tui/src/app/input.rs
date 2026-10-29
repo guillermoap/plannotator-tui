@@ -30,6 +30,10 @@ impl App {
                     Ok(())
                 }
                 Mode::ReviewMenu => self.menu_key(*key),
+                Mode::Jump(_) => {
+                    self.jump_key(*key);
+                    Ok(())
+                }
                 Mode::Compose | Mode::Edit(_) => self.text_key(*key),
                 Mode::AttachImage(_) => self.image_prompt_key(*key),
             },
@@ -244,9 +248,16 @@ impl App {
         {
             return self.act(kind);
         }
+        if self.count_digit(&key) {
+            return Ok(());
+        }
+        let count = self.count.take();
+        if count.is_some() {
+            self.status = None;
+        }
         // Visual mode: the selection follows the cursor.
         if self.selection.is_some_and(|s| s.dragging) {
-            self.visual_key(key);
+            self.visual_key(key, count);
             return Ok(());
         }
         // Roaming (`i`): the cursor moves with nothing selected yet, so `v` can start
@@ -257,7 +268,7 @@ impl App {
                 self.status = None;
                 return Ok(());
             }
-            if self.motion_key(key) {
+            if self.motion_key(key, count) {
                 return Ok(());
             }
         }
@@ -279,16 +290,20 @@ impl App {
                 ));
             }
             Some(Action::MoveCursor) => self.start_roaming(),
-            Some(Action::Down) => self.select_block(self.selected + 1),
-            Some(Action::Up) => self.select_block(self.selected.saturating_sub(1)),
+            Some(Action::Down) => self.select_block(self.selected + count.unwrap_or(1)),
+            Some(Action::Up) => self.select_block(self.selected.saturating_sub(count.unwrap_or(1))),
             // A cursor that moves must be visible, so a column move in block mode is a
             // roaming move: the same key, with the cursor drawn.
-            Some(Action::Left | Action::Right) => {
+            Some(Action::Left | Action::Right | Action::WordForward | Action::WordBack | Action::WordEnd) => {
                 self.start_roaming();
-                self.motion_key(key);
+                self.motion_key(key, count);
+            }
+            Some(Action::GotoWord) => {
+                self.motion_key(key, None);
             }
             Some(Action::PageDown) => self.page_by(page / 2),
             Some(Action::PageUp) => self.page_by(-page / 2),
+            Some(Action::Top | Action::Bottom) if count.is_some() => self.goto_line(count.unwrap_or(1)),
             Some(Action::Top) => self.select_block(0),
             Some(Action::Bottom) => {
                 self.select_block(self.open.doc.blocks.len().saturating_sub(1));
@@ -319,12 +334,14 @@ impl App {
     }
 
     /// Keys while a keyboard selection is being extended.
-    fn visual_key(&mut self, key: KeyEvent) {
-        match self.keys.action(&key, keys::VISUAL) {
-            Some(Action::Back) => self.clear_selection(),
-            Some(Action::Confirm | Action::Visual) => self.finish_selection(),
+    fn visual_key(&mut self, key: KeyEvent, count: Option<usize>) {
+        let goto_line = self.keys.action(&key, &[Action::Top, Action::Bottom]).and(count);
+        match (self.keys.action(&key, keys::VISUAL), goto_line) {
+            (Some(Action::Back), _) => self.clear_selection(),
+            (Some(Action::Confirm | Action::Visual), _) => self.finish_selection(),
+            (_, Some(line)) => self.goto_line(line),
             _ => {
-                self.motion_key(key);
+                self.motion_key(key, count);
             }
         }
         if let Some(sel) = self.selection.as_mut() {
@@ -338,84 +355,17 @@ impl App {
         self.roam = true;
         let hint = |action| self.keys.hint(action);
         self.status = Some(format!(
-            "move: {} {} {} {} {} · {} select · {} back to blocks",
+            "move: {} {} {} {} {} {} · {} jump · {} select · {} back to blocks",
             self.keys.directions_hint(),
             hint(Action::WordForward),
+            hint(Action::WordEnd),
             hint(Action::WordBack),
             hint(Action::LineStart),
             hint(Action::LineEnd),
+            hint(Action::GotoWord),
             hint(Action::Visual),
             hint(Action::Back)
         ));
-    }
-
-    /// The cursor motions shared by visual and roaming modes. True when `key` was one.
-    fn motion_key(&mut self, key: KeyEvent) -> bool {
-        match self.keys.action(&key, keys::MOTION) {
-            Some(Action::Left) => self.move_cursor(0, -1),
-            Some(Action::Right) => self.move_cursor(0, 1),
-            Some(Action::Down) => self.move_cursor(1, 0),
-            Some(Action::Up) => self.move_cursor(-1, 0),
-            Some(Action::WordForward) => self.move_word(1),
-            Some(Action::WordBack) => self.move_word(-1),
-            Some(Action::LineStart) => self.cursor.1 = 0,
-            Some(Action::LineEnd) => {
-                self.cursor.1 =
-                    self.open.layout.row(self.cursor.0).map_or(0, |r| r.cells.len().saturating_sub(1));
-            }
-            _ => return false,
-        }
-        self.ensure_cursor_visible();
-        true
-    }
-
-    /// Move the keyboard cursor by rows/columns, skipping gap rows and clamping to text.
-    fn move_cursor(&mut self, rows: i64, cols: i64) {
-        let total = self.open.layout.total_rows;
-        if total == 0 {
-            return;
-        }
-        let mut row = self.cursor.0;
-        for _ in 0..rows.unsigned_abs() {
-            let next = if rows > 0 { row + 1 } else { row.saturating_sub(1) };
-            if next >= total || next == row {
-                break;
-            }
-            row = next;
-            if self.open.layout.row(row).is_none() {
-                // gap row: keep going in the same direction
-                let after = if rows > 0 { row + 1 } else { row.saturating_sub(1) };
-                if after < total && self.open.layout.row(after).is_some() {
-                    row = after;
-                }
-            }
-        }
-        let width = self.open.layout.row(row).map_or(0, |r| r.cells.len());
-        let col = (self.cursor.1 as i64 + cols).clamp(0, width.saturating_sub(1) as i64) as usize;
-        self.cursor = (row, col);
-        if let Some(block) = self.open.layout.block_at_row(row) {
-            self.selected = block;
-        }
-        self.ensure_cursor_visible();
-    }
-
-    /// Jump to the next (+1) or previous (-1) word start on the current row.
-    fn move_word(&mut self, direction: i64) {
-        let Some(row) = self.open.layout.row(self.cursor.0) else { return };
-        let text = row.line.to_string();
-        let chars: Vec<char> = text.chars().collect();
-        let is_boundary = |i: usize| {
-            let here = chars.get(i).is_some_and(|c| !c.is_whitespace());
-            let before = i == 0 || chars.get(i - 1).is_some_and(char::is_ascii_whitespace);
-            here && before
-        };
-        let col = self.cursor.1;
-        let next = if direction > 0 {
-            (col + 1..chars.len()).find(|&i| is_boundary(i)).unwrap_or(chars.len().saturating_sub(1))
-        } else {
-            (0..col).rev().find(|&i| is_boundary(i)).unwrap_or(0)
-        };
-        self.cursor.1 = next;
     }
 
     fn text_key(&mut self, key: KeyEvent) -> Result<()> {
@@ -440,7 +390,8 @@ impl App {
                     | Mode::Pick
                     | Mode::FileSearch
                     | Mode::Archive
-                    | Mode::ReviewMenu => {
+                    | Mode::ReviewMenu
+                    | Mode::Jump(_) => {
                         if !body.is_empty()
                             && let Some(pending) = self.pending.take()
                         {

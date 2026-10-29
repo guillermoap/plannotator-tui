@@ -98,7 +98,7 @@ dimmed. The keys also work without opening the menu.
 | anywhere | `Tab` cycle tree · document · notes; `E` send; `t` tree; `r` reload; `o` open the file in `$EDITOR`; `q` quit |
 | reply review | `S` send and close |
 | gated review | `A` approve; `E` send and finish; `q` dismiss |
-| document | `j`/`k` block; `c` comment on the block; `x` clear its annotations; `X` clear every annotation on the document, after a `y`; `v` select with `hjkl` `w` `b` `0` `$`, `Enter` to finish; `i` move the cursor with those keys first, then `v` to select from there; `I`/`D` attach or remove an image on the block's note |
+| document | `j`/`k` block; `c` comment on the block; `x` clear its annotations; `X` clear every annotation on the document, after a `y`; `v` select with `hjkl` `w` `e` `b` `0` `$`, `Enter` to finish; `i` move the cursor with those keys first, then `v` to select from there; `f` then a two-letter label jumps to a visible word; a count repeats a motion (`3w`), and before `G` goes to that source line (`10G`); `I`/`D` attach or remove an image on the block's note |
 | toolbar | `a` looks good · `c` comment · `d` delete · `y` copy · `Esc` |
 | notes | `j`/`k`; `e` edit; `x` remove; `I` attach an image, `D` remove the last; click a bubble |
 | file/folder review | `E` send new · `m` review menu (`R` resend all · `F` finish review · `U` undo · `H` archive) |
@@ -278,7 +278,8 @@ screen show your keys. `plannotator-tui config` prints every action with its key
 | Action | Default | Does |
 |---|---|---|
 | `up` `down` `left` `right` | `k` `j` `h` `l`, arrows | move; `left`/`right` in the document start the cursor, `right` in the tree opens |
-| `word-forward` `word-back` | `w` `b` | cursor to the next or previous word |
+| `word-forward` `word-end` `word-back` | `w` `e` `b` | cursor to the next word start, the next word end, or the previous word start |
+| `goto-word` | `f` | label the visible words; type a label to move the cursor there |
 | `line-start` `line-end` | `0` `$`, `Home` `End` | cursor to the start or end of the line |
 | `page-down` `page-up` | `ctrl+d` `ctrl+u`, `PageDown` `PageUp` | half a page |
 | `top` `bottom` | `g` `G`, `Home` `End` | first or last block |

@@ -107,7 +107,7 @@ impl App {
             Mode::FileSearch => self.draw_file_search(frame),
             Mode::Archive => self.draw_archive(frame),
             Mode::ReviewMenu => self.draw_review_menu(frame),
-            Mode::Browse | Mode::ConfirmQuit | Mode::ConfirmClearAll => {}
+            Mode::Browse | Mode::ConfirmQuit | Mode::ConfirmClearAll | Mode::Jump(_) => {}
         }
     }
 
@@ -226,6 +226,7 @@ impl App {
             };
             buf.set_span(gutter.x, screen_y, &marker, 1);
         }
+        self.draw_jump_labels(buf, doc);
     }
 
     /// Screen position for a floating widget anchored at the pending selection: one row
@@ -532,6 +533,7 @@ impl App {
             .collect(),
             Focus::Document => [
                 key(Action::MoveCursor, "move"),
+                key(Action::GotoWord, "jump"),
                 key(Action::Visual, "select"),
                 key(Action::Comment, "comment"),
                 note.is_some().then(|| key(Action::AttachImage, "image")).flatten(),
