@@ -183,10 +183,11 @@ mod tests {
         let request = app.take_editor_request().expect("request");
         app.editor_returned(&request, Ok(exited(0)));
         assert_eq!(app.status.as_deref(), Some("no changes from code"));
-        // A GUI editor that returned at once saves later: the usual hint covers it.
+        // A GUI editor that returned at once saves later: the disk check reloads it.
         save(&root, "# Plan\n\nedited later\n");
         assert!(app.check_disk());
-        assert_eq!(app.status.as_deref(), Some("File changed on disk. Press r to reload."));
+        assert!(app.open.doc.source.contains("edited later"));
+        assert_eq!(app.status.as_deref(), Some("file changed: reloaded · 0 orphaned"));
         let _ = std::fs::remove_dir_all(root);
     }
 

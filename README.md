@@ -85,6 +85,9 @@ note. With nothing pending, `E` reports “nothing new to send”. A failed send
 pending for retry.
 
 `F` **Finish review** archives sent, unchanged notes and leaves pending ones in place.
+When the open file changes on disk, typically an agent acting on sent notes, the viewer
+reloads it and archives its sent notes the same way. Pending notes stay. The reload waits
+while a selection, a comment or a picker is open.
 `U` undoes the last finish during this session. `H` opens the archive, where Enter or a
 click restores a note even after reopening the app. Restoring keeps its original id and
 sent status. The archive is stored with the annotations and works even when feedback
@@ -144,7 +147,7 @@ rather than capturing stdout. Each decision is also added to the feedback archiv
 on the open file, at the current line for vim, nvim, nano, helix, emacs, micro and kak. When
 the editor exits the viewer comes back and, if the file changed, reloads it as `r` does so
 notes re-anchor. A GUI editor without its wait flag returns at once; save later and the
-footer says the file changed. Reply and terminal reviews have no file, so `o` does nothing
+viewer reloads the file by itself. Reply and terminal reviews have no file, so `o` does nothing
 there.
 
 Hidden folders are out of the tree until `.` asks for them, and `.git`, `.hg`, `.svn`,

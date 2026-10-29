@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use plannotator_tui_schema::Annotation;
+use plannotator_tui_schema::{Annotation, Provenance};
 
 use super::feedback::ReviewCounts;
 use super::{App, Focus, Mode};
@@ -52,6 +52,20 @@ impl App {
             format!("archived {count} annotation(s)")
         };
         self.status = Some(with_errors(status, "archive", &errors));
+    }
+
+    /// Archive the open file's sent notes, undoable like `finish-review`: the agent changed
+    /// the file, so it has acted on them. The number archived.
+    pub(super) fn archive_open_sent(&mut self) -> Result<usize> {
+        let Provenance::File { path } = &self.open.source.provenance else { return Ok(0) };
+        let path = path.clone();
+        let ids = self.open.store.archive_sent()?;
+        let count = ids.len();
+        if count > 0 {
+            self.undo_archive = vec![ArchivedBatch { path, ids }];
+            self.after_review_change();
+        }
+        Ok(count)
     }
 
     fn archive_review_file(&mut self, path: &Path) -> Result<Vec<String>> {
